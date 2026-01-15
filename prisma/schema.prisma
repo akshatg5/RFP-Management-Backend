@@ -1,0 +1,79 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model RequestForProposal {
+  id             String  @id @default(uuid())
+  title          String
+  rawPrompt      String
+  structuredData Json
+  budget         Float?
+  deliveryDays   Int?
+  paymentTerms   String?
+  warrantyYears  Int?
+
+  vendors   RFPVendor[]
+  proposals Proposal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Data model to record the details about the vendor
+model Vendor {
+  id    String  @id @default(uuid())
+  name  String
+  email String  @unique
+  notes String?
+
+  rfps      RFPVendor[]
+  proposals Proposal[]
+
+  createdAt DateTime @default(now())
+}
+
+// request for proposal sent to the vendor
+model RFPVendor {
+  id       String          @id @default(uuid())
+  rfpId    String
+  vendorId String
+  status   RFPVendorStatus @default(SENT)
+
+  rfp    RequestForProposal @relation(fields: [rfpId], references: [id])
+  vendor Vendor             @relation(fields: [vendorId], references: [id])
+
+  sentAt DateTime?
+}
+
+model Proposal {
+  id       String @id @default(uuid())
+  rfpId    String
+  vendorId String
+
+  rawEmailBody  String
+  extractedData Json
+  aiScore       Float?
+  aiEvaluation  String?
+
+  rfp    RequestForProposal @relation(fields: [rfpId], references: [id])
+  vendor Vendor             @relation(fields: [vendorId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+enum RFPVendorStatus {
+  DRAFT
+  SENT
+  RESPONDED
+}
