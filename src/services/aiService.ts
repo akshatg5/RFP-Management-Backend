@@ -15,7 +15,7 @@ export class AIService {
 
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash-lite",
     });
   }
 
@@ -61,7 +61,7 @@ export class AIService {
         "AI Service Error (Structure RFP):",
         error.message || error
       );
-      
+
       console.log("AI structuring failed, using fallback RFP parser...");
       // Use fallback parsing when AI fails
       return this.generateFallbackStructuredRFP(prompt);
@@ -649,7 +649,7 @@ Respond ONLY with valid JSON in this exact format:
           }`
       )
       .join("\n");
-  
+
     return `Dear ${vendorName},
   
   We are pleased to invite you to submit a proposal for the following procurement:
@@ -663,7 +663,11 @@ Respond ONLY with valid JSON in this exact format:
   ${items}
   
   ${rfpData.budget ? `Budget: $${rfpData.budget.toLocaleString()}` : ""}
-  ${rfpData.deliveryDays ? `Delivery Timeline: ${rfpData.deliveryDays} days` : ""}
+  ${
+    rfpData.deliveryDays
+      ? `Delivery Timeline: ${rfpData.deliveryDays} days`
+      : ""
+  }
   ${rfpData.paymentTerms ? `Payment Terms: ${rfpData.paymentTerms}` : ""}
   ${
     rfpData.warrantyYears
@@ -700,15 +704,15 @@ Respond ONLY with valid JSON in this exact format:
   // Fallback RFP structuring when AI is unavailable
   private generateFallbackStructuredRFP(prompt: string): StructuredRFP {
     console.log("🔧 Generating fallback structured RFP from prompt...");
-    
+
     const lowerPrompt = prompt.toLowerCase();
-    
+
     // Extract title - use first sentence or first 50 chars
     const titleMatch = prompt.match(/^([^.!?\n]+)/);
-    const title = titleMatch 
+    const title = titleMatch
       ? titleMatch[1].trim().substring(0, 100)
       : prompt.substring(0, 50).trim() + "...";
-    
+
     // Extract budget - look for dollar amounts
     let budget: number | undefined;
     const budgetPatterns = [
@@ -719,7 +723,7 @@ Respond ONLY with valid JSON in this exact format:
       /up\s+to\s+\$?([\d,]+)/i,
       /maximum\s+\$?([\d,]+)/i,
     ];
-    
+
     for (const pattern of budgetPatterns) {
       const match = prompt.match(pattern);
       if (match) {
@@ -727,7 +731,7 @@ Respond ONLY with valid JSON in this exact format:
         break;
       }
     }
-    
+
     // Extract delivery timeline - look for days/weeks/months
     let deliveryDays: number | undefined;
     const deliveryPatterns = [
@@ -735,7 +739,7 @@ Respond ONLY with valid JSON in this exact format:
       /(\d+)\s*weeks?/i,
       /(\d+)\s*months?/i,
     ];
-    
+
     for (const pattern of deliveryPatterns) {
       const match = prompt.match(pattern);
       if (match) {
@@ -750,19 +754,25 @@ Respond ONLY with valid JSON in this exact format:
         break;
       }
     }
-    
+
     // Extract payment terms
     let paymentTerms: string | undefined;
     if (lowerPrompt.includes("net 30")) {
       paymentTerms = "Net 30";
     } else if (lowerPrompt.includes("net 60")) {
       paymentTerms = "Net 60";
-    } else if (lowerPrompt.includes("upfront") || lowerPrompt.includes("advance")) {
+    } else if (
+      lowerPrompt.includes("upfront") ||
+      lowerPrompt.includes("advance")
+    ) {
       paymentTerms = "Payment in advance";
-    } else if (lowerPrompt.includes("cod") || lowerPrompt.includes("cash on delivery")) {
+    } else if (
+      lowerPrompt.includes("cod") ||
+      lowerPrompt.includes("cash on delivery")
+    ) {
       paymentTerms = "Cash on Delivery";
     }
-    
+
     // Extract warranty
     let warrantyYears: number | undefined;
     const warrantyPatterns = [
@@ -770,7 +780,7 @@ Respond ONLY with valid JSON in this exact format:
       /warranty[:\s]+(\d+)\s*years?/i,
       /(\d+)\s*year\s*warranty/i,
     ];
-    
+
     for (const pattern of warrantyPatterns) {
       const match = prompt.match(pattern);
       if (match) {
@@ -778,66 +788,69 @@ Respond ONLY with valid JSON in this exact format:
         break;
       }
     }
-    
+
     // Extract items - look for quantities and product names
     const items: Array<{
       name: string;
       quantity: number;
       specifications?: Record<string, string>;
     }> = [];
-    
+
     // More sophisticated item extraction
     // Pattern 1: "20 laptops with..." or "15 monitors that are..."
-    const itemPattern1 = /(\d+)\s+(laptops?|monitors?|desktops?|computers?|tablets?|phones?|keyboards?|mice|printers?|scanners?|routers?|switches?|servers?|chairs?|desks?|projectors?)/gi;
-    
+    const itemPattern1 =
+      /(\d+)\s+(laptops?|monitors?|desktops?|computers?|tablets?|phones?|keyboards?|mice|printers?|scanners?|routers?|switches?|servers?|chairs?|desks?|projectors?)/gi;
+
     let match;
     const foundItems = new Set<string>();
-    
+
     while ((match = itemPattern1.exec(prompt)) !== null) {
       const quantity = parseInt(match[1]);
       let name = match[2].toLowerCase();
-      
+
       // Normalize plural forms
-      if (name.endsWith('s') && name !== 'mice') {
+      if (name.endsWith("s") && name !== "mice") {
         name = name.slice(0, -1);
       }
-      if (name === 'mice') {
-        name = 'mouse';
+      if (name === "mice") {
+        name = "mouse";
       }
-      
+
       // Capitalize
       name = name.charAt(0).toUpperCase() + name.slice(1);
-      
+
       // Avoid duplicates
       if (!foundItems.has(name.toLowerCase())) {
         foundItems.add(name.toLowerCase());
-        
+
         // Try to extract specifications for this item
         const specs: Record<string, string> = {};
-        
+
         // Look for specs after the item mention
         const itemContext = prompt.substring(match.index, match.index + 200);
-        
+
         // Extract RAM
         const ramMatch = itemContext.match(/(\d+)\s*GB\s*RAM/i);
         if (ramMatch) specs.ram = `${ramMatch[1]}GB`;
-        
+
         // Extract storage
         const storageMatch = itemContext.match(/(\d+)\s*GB\s*SSD/i);
         if (storageMatch) specs.storage = `${storageMatch[1]}GB SSD`;
-        
+
         // Extract processor
-        const processorMatch = itemContext.match(/(Intel\s+[iI]\d+|AMD\s+Ryzen\s+\d+|M\d+\s+(?:Pro|Max)?)/i);
+        const processorMatch = itemContext.match(
+          /(Intel\s+[iI]\d+|AMD\s+Ryzen\s+\d+|M\d+\s+(?:Pro|Max)?)/i
+        );
         if (processorMatch) specs.processor = processorMatch[1];
-        
+
         // Extract screen size
         const screenMatch = itemContext.match(/(\d+)-inch/i);
         if (screenMatch) specs.screenSize = `${screenMatch[1]}-inch`;
-        
+
         // Extract resolution
         const resMatch = itemContext.match(/(4K|1080p|1440p|2K|Full\s*HD)/i);
         if (resMatch) specs.resolution = resMatch[1];
-        
+
         items.push({
           name,
           quantity,
@@ -845,19 +858,32 @@ Respond ONLY with valid JSON in this exact format:
         });
       }
     }
-    
+
     // If no items found with specific patterns, try generic pattern
     if (items.length === 0) {
       const genericPattern = /(\d+)\s+([a-z]{3,}(?:\s+[a-z]+)?)/gi;
       const matches = [...prompt.matchAll(genericPattern)];
-      
-      for (const m of matches.slice(0, 3)) { // Limit to first 3 matches
+
+      for (const m of matches.slice(0, 3)) {
+        // Limit to first 3 matches
         const quantity = parseInt(m[1]);
         const name = m[2].trim();
-        
+
         // Filter out common words that aren't items
-        const skipWords = ['days', 'day', 'years', 'year', 'total', 'least', 'inch'];
-        if (!skipWords.includes(name.toLowerCase()) && quantity > 0 && quantity < 10000) {
+        const skipWords = [
+          "days",
+          "day",
+          "years",
+          "year",
+          "total",
+          "least",
+          "inch",
+        ];
+        if (
+          !skipWords.includes(name.toLowerCase()) &&
+          quantity > 0 &&
+          quantity < 10000
+        ) {
           items.push({
             name: name.charAt(0).toUpperCase() + name.slice(1),
             quantity,
@@ -865,7 +891,7 @@ Respond ONLY with valid JSON in this exact format:
         }
       }
     }
-    
+
     // If still no items found, create a generic item from the prompt
     if (items.length === 0) {
       items.push({
@@ -876,14 +902,17 @@ Respond ONLY with valid JSON in this exact format:
         },
       });
     }
-    
+
     // Extract additional requirements
     const additionalRequirements: string[] = [];
-    
+
     if (lowerPrompt.includes("warranty")) {
       additionalRequirements.push("Warranty coverage required");
     }
-    if (lowerPrompt.includes("support") || lowerPrompt.includes("maintenance")) {
+    if (
+      lowerPrompt.includes("support") ||
+      lowerPrompt.includes("maintenance")
+    ) {
       additionalRequirements.push("Technical support and maintenance");
     }
     if (lowerPrompt.includes("training")) {
@@ -892,7 +921,7 @@ Respond ONLY with valid JSON in this exact format:
     if (lowerPrompt.includes("installation") || lowerPrompt.includes("setup")) {
       additionalRequirements.push("Installation and setup services");
     }
-    
+
     const structuredRFP: StructuredRFP = {
       title,
       description: prompt,
@@ -901,15 +930,18 @@ Respond ONLY with valid JSON in this exact format:
       deliveryDays,
       paymentTerms,
       warrantyYears,
-      additionalRequirements: additionalRequirements.length > 0 ? additionalRequirements : undefined,
+      additionalRequirements:
+        additionalRequirements.length > 0 ? additionalRequirements : undefined,
     };
-    
+
     console.log("✅ Fallback RFP structure generated:");
     console.log(`   Title: ${title}`);
     console.log(`   Items: ${items.length}`);
     console.log(`   Budget: ${budget ? `$${budget}` : "Not specified"}`);
-    console.log(`   Delivery: ${deliveryDays ? `${deliveryDays} days` : "Not specified"}`);
-    
+    console.log(
+      `   Delivery: ${deliveryDays ? `${deliveryDays} days` : "Not specified"}`
+    );
+
     return structuredRFP;
   }
 }
