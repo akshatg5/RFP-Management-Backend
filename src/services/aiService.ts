@@ -134,16 +134,22 @@ IMPORTANT HANDLING RULES:
 RESPONSE FORMAT:
 Respond ONLY with valid JSON. No markdown, no preamble, no explanations.
 
+EXAMPLE RESPONSE:
 {
-  "items": [...],
-  "totalPrice": number,
-  "deliveryDays": number,
-  "paymentTerms": string | string[],
-  "warranty": string,
-  "additionalServices": string[],
-  "notes": string,
-  "confidence": number
+  "items": [
+    {"name": "Laptop", "quantity": 5, "specifications": {"ram": "16GB", "storage": "512GB SSD"}},
+    {"name": "Monitor", "quantity": 5, "specifications": {"size": "27-inch", "resolution": "4K"}}
+  ],
+  "totalPrice": 12500,
+  "deliveryDays": 14,
+  "paymentTerms": "Net 30",
+  "warranty": "2 years",
+  "additionalServices": ["Installation", "Training"],
+  "notes": "Includes setup and configuration",
+  "confidence": 85
 }
+
+YOUR RESPONSE MUST BE VALID JSON:
 `;
 
       console.log('📧 Sending email to AI for parsing...');
@@ -258,7 +264,10 @@ Provide:
 - score: Number between 0-100
 - evaluation: Detailed 3-5 sentence evaluation explaining the score, highlighting strengths and weaknesses
 
-Respond ONLY with valid JSON: {"score": <number>, "evaluation": "<string>"}`;
+EXAMPLE RESPONSE:
+{"score": 87, "evaluation": "This proposal offers excellent value with competitive pricing and fast delivery. The vendor demonstrates strong technical expertise and provides comprehensive warranty coverage. Minor concerns about payment terms could be negotiated."}
+
+YOUR RESPONSE MUST BE VALID JSON:`;
 
       const result = await this.model.generateContent({
         contents: [
@@ -278,9 +287,11 @@ Respond ONLY with valid JSON: {"score": <number>, "evaluation": "<string>"}`;
       const response = await result.response;
       let text = response.text().trim();
 
+      // Clean up the response text
       text = text
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
+        .replace(/```/g, "")
         .trim();
 
       const scoringData = JSON.parse(text);
@@ -335,7 +346,14 @@ ${JSON.stringify(rfpData, null, 2)}
 Vendor Proposals:
 ${JSON.stringify(proposals, null, 2)}
 
-Respond ONLY with valid JSON: {"recommendedVendorId": "<string>", "reasoning": "<string>", "comparisonSummary": "<string>"}`;
+EXAMPLE RESPONSE:
+{
+  "recommendedVendorId": "vendor-123",
+  "reasoning": "TechCorp offers the best overall value with competitive pricing, proven reliability, and comprehensive service offerings. Their delivery timeline aligns perfectly with project requirements while providing excellent warranty coverage.",
+  "comparisonSummary": "TechCorp leads with a 92/100 score due to superior pricing and service quality. DataSys follows closely at 88/100 with strong technical capabilities but higher costs. BudgetCorp offers the lowest price at 76/100 but lacks comprehensive support services."
+}
+
+YOUR RESPONSE MUST BE VALID JSON:
 
       const result = await this.model.generateContent({
         contents: [
