@@ -1,8 +1,20 @@
 import { Router } from "express";
 import { ProposalService } from "../services/proposalService";
+import { EmailService } from "../services/emailService";
 
 const router = Router();
 const proposalService = new ProposalService();
+const emailService = new EmailService();
+
+// Get all proposals
+router.get("/", async (req, res) => {
+  try {
+    const proposals = await proposalService.getAllProposals();
+    res.status(200).json({ success: true, data: proposals });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Get proposal by ID
 router.get("/:id", async (req, res) => {
@@ -56,6 +68,17 @@ router.get("/rfp/:rfpId/stats", async (req, res) => {
   try {
     const stats = await proposalService.getProposalStats(req.params.rfpId);
     res.status(200).json({ success: true, data: stats });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get webhook events (received proposals)
+router.get("/webhook-events", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const events = await emailService.getWebhookEvents(limit);
+    res.status(200).json({ success: true, data: events });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

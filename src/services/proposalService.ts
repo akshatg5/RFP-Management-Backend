@@ -34,6 +34,35 @@ export class ProposalService {
     }
   }
 
+  // get all proposals
+  async getAllProposals(): Promise<ProposalResponse[]> {
+    try {
+      const proposals = await prismaClient.proposal.findMany({
+        include: {
+          vendor: true,
+          rfp: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return proposals.map((proposal: any) => ({
+        id: proposal.id,
+        rfpId: proposal.rfpId,
+        vendorId: proposal.vendorId,
+        vendorName: proposal.vendor.name,
+        vendorEmail: proposal.vendor.email,
+        rawEmailBody: proposal.rawEmailBody,
+        extractedData: proposal.extractedData,
+        aiScore: proposal.aiScore ?? undefined,
+        aiEvaluation: proposal.aiEvaluation ?? undefined,
+        createdAt: proposal.createdAt,
+      }));
+    } catch (error: any) {
+      console.error("Proposal Service Error (getAllProposals):", error);
+      throw new Error(`Failed to fetch all proposals: ${error.message}`);
+    }
+  }
+
   // get all proposals for an RFP
   async getProposalsByRFP(rfpId: string): Promise<ProposalResponse[]> {
     try {
