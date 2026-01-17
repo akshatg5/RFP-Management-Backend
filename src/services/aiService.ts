@@ -15,7 +15,7 @@ export class AIService {
 
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-3-flash-preview",
     });
   }
 
@@ -536,11 +536,13 @@ YOUR RESPONSE MUST BE VALID JSON:`;
       // Parse the JSON from the response text
       try {
         // Extract JSON from markdown code blocks if present
-        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```\n([\s\S]*?)\n```/);
+        const jsonMatch =
+          text.match(/```json\n([\s\S]*?)\n```/) ||
+          text.match(/```\n([\s\S]*?)\n```/);
         const jsonText = jsonMatch ? jsonMatch[1] : text;
-        
+
         const recommendation = JSON.parse(jsonText);
-        
+
         return {
           recommendedVendorId: recommendation.recommendedVendorId,
           reasoning: recommendation.reasoning,
@@ -549,11 +551,12 @@ YOUR RESPONSE MUST BE VALID JSON:`;
       } catch (parseError) {
         console.error("Failed to parse AI recommendation JSON:", parseError);
         console.log("Raw AI response:", text);
-        
+
         // Return a fallback structure
         return {
           recommendedVendorId: proposals[0]?.vendorId || "",
-          reasoning: "Unable to parse AI recommendation. Please review proposals manually.",
+          reasoning:
+            "Unable to parse AI recommendation. Please review proposals manually.",
           comparisonSummary: text,
         };
       }
