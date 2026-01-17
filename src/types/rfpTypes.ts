@@ -1,11 +1,11 @@
 export interface RFPItem {
   name: string;
   quantity: number;
-  specifications: Record<string, any>;
+  specifications?: Record<string, any>;
 }
 
 export interface StructuredRFP {
-  id : string;
+  id?: string;
   title: string;
   description: string;
   items: RFPItem[];

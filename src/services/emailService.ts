@@ -36,7 +36,7 @@ export class EmailService {
         throw new Error(error.message);
       }
 
-      console.log(`✅ Email sent to ${to}: ${data?.id}`);
+      console.log(`✅ RFP email sent to ${to}`);
 
       return {
         success: true,
@@ -95,5 +95,39 @@ export class EmailService {
   extractEmailAddress(fromField: string): string {
     const match = fromField.match(/<(.+?)>/);
     return match ? match[1] : fromField.trim();
+  }
+
+  // Fetch recent emails from Resend (for manual proposal checking)
+  async getRecentEmails(limit: number = 10): Promise<any[]> {
+    try {
+      console.log(`📧 Fetching last ${limit} emails from Resend...`);
+      
+      const response = await fetch(
+        `https://api.resend.com/emails?limit=${limit}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Resend API Error: ${response.status} ${response.statusText}`);
+        console.error('Error details:', errorText);
+        throw new Error(`Failed to fetch emails: ${response.statusText}`);
+      }
+
+      const data: any = await response.json();
+      const emails = data.data || [];
+      
+      console.log(`✅ Retrieved ${emails.length} emails`);
+      return emails;
+    } catch (error: any) {
+      console.error('Email Service Error (getRecentEmails):', error.message);
+      throw new Error(`Failed to fetch recent emails: ${error.message}`);
+    }
   }
 }

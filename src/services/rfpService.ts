@@ -19,6 +19,19 @@ export class RFPService {
     this.emailService = new EmailService();
   }
 
+  // Preview RFP structure without saving to database
+  async previewRFP(input: CreateRFPInput): Promise<StructuredRFP> {
+    try {
+      const structuredData = await this.aiService.structureRFPOnly(
+        input.naturalLanguagePrompt
+      );
+      return structuredData;
+    } catch (error: any) {
+      console.error("RFP Service Error (previewRFP):", error);
+      throw new Error(`Failed to preview RFP: ${error.message}`);
+    }
+  }
+
   // create a new RFP from natural language prompt
   async createRFP(input: CreateRFPInput): Promise<CreateRFPResponse> {
     try {
@@ -174,6 +187,13 @@ export class RFPService {
       }
 
       const structuredData = rfp.structuredData as unknown as StructuredRFP;
+      
+      // Add RFP ID to structured data for email generation
+      const structuredDataWithId = {
+        ...structuredData,
+        id: rfp.id,
+      };
+      
       let sentCount = 0;
       const failedVendors: string[] = [];
 
@@ -182,7 +202,7 @@ export class RFPService {
         try {
           // Generate email content using AI
           const emailContent = await this.aiService.generateRFPEmailContent(
-            structuredData,
+            structuredDataWithId,
             vendor.name
           );
 
@@ -403,6 +423,76 @@ export class RFPService {
     } catch (error: any) {
       console.error("RFP Service Error (deleteRFP):", error);
       throw new Error(`Failed to delete RFP: ${error.message}`);
+    }
+  }
+
+  // Manually check for proposals in recent emails
+  async checkForProposals(rfpId: string): Promise<{
+    scannedCount: number;
+    foundCount: number;
+    processedCount: number;
+    proposals: any[];
+    errors: string[];
+  }> {
+    try {
+      console.log(`\n🔍 Checking for proposals for RFP: ${rfpId}`);
+      
+      // Verify RFP exists
+      const rfp = await prismaClient.requestForProposal.findUnique({
+        where: { id: rfpId },
+      });
+
+      if (!rfp) {
+        throw new Error("RFP not found");
+      }
+
+      const result = {
+        scannedCount: 0,
+        foundCount: 0,
+        processedCount: 0,
+        proposals: [] as any[],
+        errors: [] as string[],
+      };
+
+      console.log(`📧 Note: Resend API only returns SENT emails, not RECEIVED emails.`);
+      console.log(`💡 The webhook is the primary way to process inbound proposals.`);
+      console.log(`🔍 Checking if there are any vendors who were sent RFPs but haven't responded yet...`);
+
+      // Get all vendors who were sent this RFP
+      const rfpVendors = await prismaClient.rFPVendor.findMany({
+        where: {
+          rfpId: rfpId,
+          status: 'SENT', // Only check vendors who haven't responded yet
+        },
+        include: {
+          vendor: true,
+        },
+      });
+
+      result.scannedCount = rfpVendors.length;
+      console.log(`📊 Found ${rfpVendors.length} vendor(s) who were sent the RFP but haven't responded`);
+
+      if (rfpVendors.length === 0) {
+        console.log(`✅ All vendors have already responded or no vendors were sent this RFP.`);
+        return result;
+      }
+
+      // Provide helpful message
+      result.errors.push(
+        `Found ${rfpVendors.length} vendor(s) who haven't responded yet. ` +
+        `Inbound emails are processed automatically via webhook. ` +
+        `If a vendor sent a proposal, it should appear automatically. ` +
+        `Please ensure vendors send their proposals to: rfp-responses@ulkeazilea.resend.app`
+      );
+
+      console.log(`\n📊 Summary:`);
+      console.log(`   Vendors awaiting response: ${result.scannedCount}`);
+      console.log(`   Note: Webhook handles inbound emails automatically\n`);
+
+      return result;
+    } catch (error: any) {
+      console.error("RFP Service Error (checkForProposals):", error);
+      throw new Error(`Failed to check for proposals: ${error.message}`);
     }
   }
 }

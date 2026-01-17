@@ -3,6 +3,34 @@ import { RFPService } from "../services/rfpService";
 
 const rfpService = new RFPService();
 
+// POST /api/rfps/preview
+// Preview RFP structure without saving to database
+export const previewRFP = async (req: Request, res: Response) => {
+  try {
+    const { naturalLanguagePrompt } = req.body;
+
+    if (!naturalLanguagePrompt || typeof naturalLanguagePrompt !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "naturalLanguagePrompt is required and must be a string",
+      });
+    }
+
+    const structuredData = await rfpService.previewRFP({ naturalLanguagePrompt });
+
+    return res.status(200).json({
+      success: true,
+      data: structuredData,
+    });
+  } catch (error: any) {
+    console.error("RFP Controller Error (Preview RFP):", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to preview RFP",
+    });
+  }
+};
+
 // POST /api/rfps
 // create a new RFP from a natural language
 export const createRFP = async (req: Request, res: Response) => {
@@ -209,6 +237,27 @@ export const deleteRFP = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       error: error.message || "Failed to delete RFP",
+    });
+  }
+};
+
+// POST /api/rfps/:id/check-proposals
+// Manually check for proposals in recent emails
+export const checkForProposals = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const result = await rfpService.checkForProposals(id);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("RFP Controller Error (checkForProposals):", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to check for proposals",
     });
   }
 };

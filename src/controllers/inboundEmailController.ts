@@ -18,6 +18,8 @@ export const handleInboundEmail = async (req: Request, res: Response) => {
     
     const webhookPayload = req.body;
     
+    console.log('Webhook Payload:', JSON.stringify(webhookPayload, null, 2));
+    
     // Check if this is an email.received event
     if (webhookPayload.type !== 'email.received') {
       console.log(`Ignoring webhook type: ${webhookPayload.type}`);
@@ -30,45 +32,66 @@ export const handleInboundEmail = async (req: Request, res: Response) => {
     console.log(`Email ID: ${emailId}`);
     console.log(`From: ${emailData.from}`);
     console.log(`Subject: ${emailData.subject}`);
+    console.log(`Email Data Keys:`, Object.keys(emailData));
 
-    // STEP 1: Fetch full email content using Resend API
-    console.log('Fetching full email content from Resend API...');
+    // STEP 1: Try to get email content from webhook payload first
+    console.log('Checking webhook payload for email content...');
     
-    const emailResponse = await fetch(
-      `https://api.resend.com/emails/${emailId}`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!emailResponse.ok) {
-      console.error(`Resend API Error: ${emailResponse.status} ${emailResponse.statusText}`);
-      const errorText = await emailResponse.text();
-      console.error('Error details:', errorText);
+    let emailBody = '';
+    let fullEmail: any = emailData;
+    
+    // Check if webhook includes text or html directly
+    if (emailData.text || emailData.html) {
+      console.log('✅ Email content found in webhook payload');
+      emailBody = emailData.text || emailData.html || '';
+    } else {
+      // STEP 2: Use Resend SDK to fetch received email content
+      console.log('Email content not in webhook, fetching using Resend SDK receiving API...');
       
-      return res.status(200).json({ 
-        success: false, 
-        error: `Failed to fetch email: ${emailResponse.statusText}` 
+      try {
+        // Use Resend SDK's receiving.get() method for inbound emails
+        const receivedEmail = await resend.emails.receiving.get(emailId);
+        
+        if (receivedEmail.data) {
+          fullEmail = receivedEmail.data;
+          emailBody = fullEmail.text || fullEmail.html || '';
+          console.log('✅ Email content retrieved from Resend receiving API');
+        } else {
+          console.warn('⚠️ Resend receiving API returned no data');
+        }
+      } catch (fetchError: any) {
+        console.error('❌ Error fetching from Resend receiving API:', fetchError.message);
+        console.log('   This might indicate the email is not available yet or API permissions issue');
+      }
+    }
+
+    // STEP 3: If still no body, we need to inform the user
+    if (!emailBody || emailBody.trim().length === 0) {
+      console.error('❌ No email body available from webhook or Resend API');
+      console.log('📋 Available email data:', JSON.stringify(emailData, null, 2));
+      
+      return res.status(200).json({
+        success: false,
+        error: 'Email body not available. The email may not have been fully processed yet.',
+        hint: 'Resend stores received emails and makes them available via the receiving API. Please try again in a few moments.',
+        receivedData: {
+          from: emailData.from,
+          subject: emailData.subject,
+          email_id: emailId,
+          hasText: !!emailData.text,
+          hasHtml: !!emailData.html,
+        },
       });
     }
 
-    const fullEmail : any = await emailResponse.json();
-    console.log('✅ Full email content retrieved');
-
-    // STEP 2: Extract email content (prioritize text, fallback to HTML)
+    // STEP 4: Extract email content (prioritize text, fallback to HTML)
     const from = emailData.from;
     const subject = emailData.subject || fullEmail.subject || '';
     
-    // Extract body - prefer plain text, but parse HTML if needed
-    let emailBody = fullEmail.text || '';
-    
-    if (!emailBody && fullEmail.html) {
-      // Simple HTML to text conversion (remove tags)
-      emailBody = fullEmail.html
+    // If we have HTML but no text, convert HTML to text
+    if (!emailBody.includes('<') && fullEmail.html) {
+      // emailBody might be HTML, convert it
+      emailBody = emailBody
         .replace(/<style[^>]*>.*?<\/style>/gi, '')
         .replace(/<script[^>]*>.*?<\/script>/gi, '')
         .replace(/<[^>]+>/g, ' ')
