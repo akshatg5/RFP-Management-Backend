@@ -5,6 +5,7 @@ import rfpRoutes from "./routes/rfpRoutes";
 import vendorRoutes from "./routes/vendorRoutes";
 import webhookRoutes from "./routes/webhookRoutes"
 import proposalRoutes from "./routes/proposalRoutes";
+import emailRoutes from "./routes/emailRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 import { apiLimiter } from "./middleware/rateLimiter";
 
@@ -49,11 +50,13 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/api/rfps", apiLimiter);
 app.use("/api/vendors", apiLimiter);
 app.use("/api/proposals", apiLimiter);
+app.use("/api/emails", apiLimiter);
 
 // Routes
 app.use("/api/rfps", rfpRoutes);
 app.use("/api/vendors", vendorRoutes);
 app.use("/api/proposals", proposalRoutes);
+app.use("/api/emails", emailRoutes);
 app.use("/api/webhooks", webhookRoutes);
 
 // Health check
