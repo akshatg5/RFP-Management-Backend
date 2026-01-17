@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import rfpRoutes from "./routes/rfpRoutes";
 import vendorRoutes from "./routes/vendorRoutes";
+import webhookRoutes from "./routes/webhookRoutes"
 import proposalRoutes from "./routes/proposalRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 import { apiLimiter } from "./middleware/rateLimiter";
@@ -47,6 +48,7 @@ app.use("/api/", apiLimiter);
 app.use("/api/rfps", rfpRoutes);
 app.use("/api/vendors", vendorRoutes);
 app.use("/api/proposals", proposalRoutes);
+app.use("/api/webhooks",webhookRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
