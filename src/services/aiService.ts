@@ -152,7 +152,7 @@ EXAMPLE RESPONSE:
 YOUR RESPONSE MUST BE VALID JSON:
 `;
 
-      console.log('📧 Sending email to AI for parsing...');
+      console.log("📧 Sending email to AI for parsing...");
       console.log(`   Email length: ${emailBody.length} characters`);
 
       const result = await this.model.generateContent({
@@ -181,13 +181,17 @@ YOUR RESPONSE MUST BE VALID JSON:
         .replace(/```\n?/g, "")
         .trim();
 
-      console.log('🤖 AI Response Preview:', text.substring(0, 300));
+      console.log("🤖 AI Response Preview:", text.substring(0, 300));
 
       const parsedData = JSON.parse(text);
 
-      console.log(`✅ Extracted proposal data (confidence: ${parsedData.confidence || 'N/A'}%)`);
+      console.log(
+        `✅ Extracted proposal data (confidence: ${
+          parsedData.confidence || "N/A"
+        }%)`
+      );
       console.log(`   Items: ${parsedData.items?.length || 0}`);
-      console.log(`   Total Price: $${parsedData.totalPrice || 'N/A'}`);
+      console.log(`   Total Price: $${parsedData.totalPrice || "N/A"}`);
 
       return {
         extractedData: parsedData,
@@ -215,26 +219,121 @@ YOUR RESPONSE MUST BE VALID JSON:
     evaluation: string;
   }> {
     try {
-      const SYSTEM_PROMPT_SCORE_PROPOSAL = `You are an expert procurement evaluator. Score vendor proposals on a scale of 0-100.
-  
-  Evaluation criteria:
-  1. Price competitiveness (30 points)
-  2. Delivery timeline (20 points)
-  3. Completeness (20 points)
-  4. Terms and conditions (15 points)
-  5. Additional value (15 points)
-  
-  RFP Requirements:
-  ${JSON.stringify(rfpData, null, 2)}
-  
-  Vendor Proposal from ${vendorName}:
-  ${JSON.stringify(proposalData, null, 2)}
-  
-  Respond with ONLY valid JSON in this exact format (no markdown, no extra text):
-  {"score": <number 0-100>, "evaluation": "<concise 2-3 sentence evaluation>"}`;
-  
-      console.log('🎯 Sending proposal to AI for scoring...');
-  
+      // Calculate reference values for scoring
+      const budgetInfo = rfpData.budget
+        ? `Budget: $${rfpData.budget}`
+        : "No budget specified";
+      const deliveryInfo = rfpData.deliveryDays
+        ? `Required delivery: ${rfpData.deliveryDays} days`
+        : "No delivery timeline specified";
+
+      const SYSTEM_PROMPT_SCORE_PROPOSAL = `You are an expert procurement evaluator. Score this vendor proposal on a scale of 0-100.
+
+**CRITICAL SCORING RULES:**
+
+1. **Price Competitiveness (30 points)**
+   ${
+     rfpData.budget
+       ? `
+   - If price <= budget: 30 points
+   - If price is 1-10% over budget: 20 points
+   - If price is 11-20% over budget: 10 points
+   - If price is >20% over budget: 5 points
+   - LOWER price is ALWAYS better (all else equal)
+   `
+       : `
+   - Since no budget specified, score based on relative value
+   - Consider if pricing seems reasonable for items requested
+   `
+   }
+
+2. **Delivery Timeline (20 points)**
+   ${
+     rfpData.deliveryDays
+       ? `
+   - If delivery <= required days: 20 points
+   - If delivery is 1-5 days late: 15 points
+   - If delivery is 6-10 days late: 10 points
+   - If delivery is >10 days late: 5 points
+   - FASTER delivery is BETTER (all else equal)
+   `
+       : `
+   - Score based on how quickly they can deliver
+   - Faster = higher score
+   `
+   }
+
+3. **Completeness (20 points)**
+   - All items quoted with specs: 20 points
+   - Most items quoted: 15 points
+   - Some items missing: 10 points
+   - Significant gaps: 5 points
+
+4. **Terms and Conditions (15 points)**
+   - Favorable payment terms: up to 8 points
+   - Good warranty coverage: up to 7 points
+
+5. **Additional Value (15 points)**
+   - Extra services/support: up to 10 points
+   - Quality indicators: up to 5 points
+
+**RFP REQUIREMENTS:**
+${JSON.stringify(rfpData, null, 2)}
+
+**VENDOR PROPOSAL from ${vendorName}:**
+${JSON.stringify(proposalData, null, 2)}
+
+**ANALYSIS CHECKLIST:**
+- Proposed price: $${proposalData.totalPrice || "N/A"} vs ${budgetInfo}
+- Proposed delivery: ${
+        proposalData.deliveryDays || "N/A"
+      } days vs ${deliveryInfo}
+- Is price within budget? ${
+        rfpData.budget
+          ? proposalData.totalPrice <= rfpData.budget
+            ? "YES ✓"
+            : "NO ✗ (PENALTY)"
+          : "N/A"
+      }
+- Is delivery on time? ${
+        rfpData.deliveryDays
+          ? proposalData.deliveryDays <= rfpData.deliveryDays
+            ? "YES ✓"
+            : "NO ✗ (PENALTY)"
+          : "N/A"
+      }
+
+**IMPORTANT:** 
+- A proposal with HIGHER price and LATER delivery should score LOWER
+- Calculate the exact point deductions based on the criteria above
+- Be objective and mathematical in your scoring
+
+Respond with ONLY valid JSON:
+{
+  "score": <number 0-100>,
+  "evaluation": "<2-3 sentences explaining the score with specific numbers>",
+  "breakdown": {
+    "price": <0-30>,
+    "delivery": <0-20>,
+    "completeness": <0-20>,
+    "terms": <0-15>,
+    "value": <0-15>
+  }
+}`;
+
+      console.log("🎯 Sending proposal to AI for scoring...");
+      console.log(`   Vendor: ${vendorName}`);
+      console.log(
+        `   Price: $${proposalData.totalPrice || "N/A"} (Budget: $${
+          rfpData.budget || "N/A"
+        })`
+      );
+      console.log(
+        `   Delivery: ${proposalData.deliveryDays || "N/A"} days (Required: ${
+          rfpData.deliveryDays || "N/A"
+        })`
+      );
+
       const result = await this.model.generateContent({
         contents: [
           {
@@ -243,51 +342,60 @@ YOUR RESPONSE MUST BE VALID JSON:
           },
         ],
         generationConfig: {
-          temperature: 0.3, // Lower temperature for more consistent JSON
-          maxOutputTokens: 2048, // Increased from 1024
-          responseMimeType: "application/json", // Forces JSON output
+          temperature: 0.1, // Very low for consistent scoring
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json",
         },
       });
-  
+
       const response = await result.response;
       let text = response.text().trim();
-  
-      console.log('📊 Raw scoring response:', text.substring(0, 200));
-  
-      // More aggressive cleanup
+
+      console.log("📊 Raw scoring response:", text.substring(0, 300));
+
+      // Cleanup
       text = text
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
         .replace(/```/g, "")
         .trim();
-  
-      // Try to extract JSON if wrapped in other text
+
+      // Extract JSON
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         text = jsonMatch[0];
       }
-  
+
       let scoringData;
       try {
         scoringData = JSON.parse(text);
       } catch (parseError) {
-        console.error('JSON parse failed. Raw text:', text);
-        console.error('Parse error:', parseError);
-        
-        // Fallback: try to extract score with regex
-        const scoreMatch = text.match(/"score"\s*:\s*(\d+)/);
-        const score = scoreMatch ? parseInt(scoreMatch[1]) : 50;
-        
+        console.error("❌ JSON parse failed. Raw text:", text);
+        console.error("Parse error:", parseError);
+
+        // Fallback with manual calculation
+        const score = this.calculateFallbackScore(rfpData, proposalData);
+
         return {
-          score: Math.min(100, Math.max(0, score)),
-          evaluation: "Automated scoring completed. Manual review recommended due to parsing issues."
+          score,
+          evaluation: `Automated scoring: ${score}/100. Price: $${
+            proposalData.totalPrice || "N/A"
+          }, Delivery: ${
+            proposalData.deliveryDays || "N/A"
+          } days. Manual review recommended.`,
         };
       }
-  
-      console.log(`✅ Proposal scored: ${scoringData.score}/100`);
-  
+
+      // Validate score
+      const finalScore = Math.min(100, Math.max(0, scoringData.score || 0));
+
+      console.log(`✅ Proposal scored: ${finalScore}/100`);
+      if (scoringData.breakdown) {
+        console.log(`   Breakdown:`, scoringData.breakdown);
+      }
+
       return {
-        score: Math.min(100, Math.max(0, scoringData.score)),
+        score: finalScore,
         evaluation: scoringData.evaluation || "No evaluation provided",
       };
     } catch (error: any) {
@@ -297,6 +405,60 @@ YOUR RESPONSE MUST BE VALID JSON:
       );
       throw new Error(`Failed to score proposal: ${error.message}`);
     }
+  }
+
+  // Fallback manual scoring when AI fails
+  private calculateFallbackScore(
+    rfpData: StructuredRFP,
+    proposalData: any
+  ): number {
+    let score = 0;
+
+    // Price scoring (30 points)
+    if (rfpData.budget && proposalData.totalPrice) {
+      const priceRatio = proposalData.totalPrice / rfpData.budget;
+      if (priceRatio <= 1.0) score += 30;
+      else if (priceRatio <= 1.1) score += 20;
+      else if (priceRatio <= 1.2) score += 10;
+      else score += 5;
+    } else {
+      score += 15; // Neutral if no budget
+    }
+
+    // Delivery scoring (20 points)
+    if (rfpData.deliveryDays && proposalData.deliveryDays) {
+      const deliveryDiff = proposalData.deliveryDays - rfpData.deliveryDays;
+      if (deliveryDiff <= 0) score += 20;
+      else if (deliveryDiff <= 5) score += 15;
+      else if (deliveryDiff <= 10) score += 10;
+      else score += 5;
+    } else {
+      score += 10; // Neutral if no timeline
+    }
+
+    // Completeness (20 points)
+    if (proposalData.items && proposalData.items.length > 0) {
+      score += 20;
+    } else {
+      score += 10;
+    }
+
+    // Terms (15 points)
+    if (proposalData.paymentTerms) score += 8;
+    if (proposalData.warranty) score += 7;
+
+    // Additional value (15 points)
+    if (
+      proposalData.additionalServices &&
+      proposalData.additionalServices.length > 0
+    ) {
+      score += 10;
+    } else {
+      score += 5;
+    }
+
+    console.log(`📊 Fallback score calculated: ${score}/100`);
+    return score;
   }
 
   // Compare multiple proposals and provide recommendation
@@ -343,7 +505,7 @@ EXAMPLE RESPONSE:
   "comparisonSummary": "TechCorp leads with a 92/100 score due to superior pricing and service quality. DataSys follows closely at 88/100 with strong technical capabilities but higher costs. BudgetCorp offers the lowest price at 76/100 but lacks comprehensive support services."
 }
 
-YOUR RESPONSE MUST BE VALID JSON:`
+YOUR RESPONSE MUST BE VALID JSON:`;
 
       const result = await this.model.generateContent({
         contents: [
@@ -409,9 +571,13 @@ Respond ONLY with valid JSON in this exact format:
       const result = await this.model.generateContent({
         contents: [
           {
-            role: 'user',
-            parts: [{ text: `${SYSTEM_PROMPT_GENERATE_EMAIL}\n\nVendor Name: ${vendorName}` }]
-          }
+            role: "user",
+            parts: [
+              {
+                text: `${SYSTEM_PROMPT_GENERATE_EMAIL}\n\nVendor Name: ${vendorName}`,
+              },
+            ],
+          },
         ],
         generationConfig: {
           temperature: 0.4,
@@ -424,36 +590,56 @@ Respond ONLY with valid JSON in this exact format:
       const response = await result.response;
       let text = response.text().trim();
 
-      text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      text = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
 
       let emailContent;
       try {
         emailContent = JSON.parse(text);
       } catch (parseError) {
-        console.warn('JSON parsing failed, using fallback method');
-        
+        console.warn("JSON parsing failed, using fallback method");
+
         emailContent = {
-          subject: `RFP: ${rfpData.title} (ID: ${rfpData.id || 'TBD'})`,
-          body: this.generateFallbackEmailBody(rfpData, vendorName)
+          subject: `RFP: ${rfpData.title} (ID: ${rfpData.id || "TBD"})`,
+          body: this.generateFallbackEmailBody(rfpData, vendorName),
         };
       }
 
       return emailContent;
     } catch (error: any) {
-      console.error('AI Service Error (generateEmail):', error.message || error);
-      
-      console.log('Using fallback email generation');
+      console.error(
+        "AI Service Error (generateEmail):",
+        error.message || error
+      );
+
+      console.log("Using fallback email generation");
       return {
         subject: `RFP: ${rfpData.title}`,
-        body: this.generateFallbackEmailBody(rfpData, vendorName)
+        body: this.generateFallbackEmailBody(rfpData, vendorName),
       };
     }
   }
 
-  private generateFallbackEmailBody(rfpData: StructuredRFP, vendorName: string): string {
-    const items = rfpData.items.map(item => 
-      `- ${item.name}: ${item.quantity} units${item.specifications ? ' (' + Object.entries(item.specifications).map(([k, v]) => `${k}: ${v}`).join(', ') + ')' : ''}`
-    ).join('\n');
+  private generateFallbackEmailBody(
+    rfpData: StructuredRFP,
+    vendorName: string
+  ): string {
+    const items = rfpData.items
+      .map(
+        (item) =>
+          `- ${item.name}: ${item.quantity} units${
+            item.specifications
+              ? " (" +
+                Object.entries(item.specifications)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(", ") +
+                ")"
+              : ""
+          }`
+      )
+      .join("\n");
 
     return `Dear ${vendorName},
 
@@ -461,19 +647,28 @@ We are pleased to invite you to submit a proposal for the following procurement:
 
 ${rfpData.description}
 
-RFP ID: ${rfpData.id || 'TBD'}
+RFP ID: ${rfpData.id || "TBD"}
 (Please include this ID in your response subject line)
 
 REQUIREMENTS:
 ${items}
 
-${rfpData.budget ? `Budget: $${rfpData.budget.toLocaleString()}` : ''}
-${rfpData.deliveryDays ? `Delivery Timeline: ${rfpData.deliveryDays} days` : ''}
-${rfpData.paymentTerms ? `Payment Terms: ${rfpData.paymentTerms}` : ''}
-${rfpData.warrantyYears ? `Warranty Required: ${rfpData.warrantyYears} year(s)` : ''}
+${rfpData.budget ? `Budget: $${rfpData.budget.toLocaleString()}` : ""}
+${rfpData.deliveryDays ? `Delivery Timeline: ${rfpData.deliveryDays} days` : ""}
+${rfpData.paymentTerms ? `Payment Terms: ${rfpData.paymentTerms}` : ""}
+${
+  rfpData.warrantyYears
+    ? `Warranty Required: ${rfpData.warrantyYears} year(s)`
+    : ""
+}
 
-${rfpData.additionalRequirements && rfpData.additionalRequirements.length > 0 ? 
-  `ADDITIONAL REQUIREMENTS:\n${rfpData.additionalRequirements.map(req => `- ${req}`).join('\n')}\n` : ''}
+${
+  rfpData.additionalRequirements && rfpData.additionalRequirements.length > 0
+    ? `ADDITIONAL REQUIREMENTS:\n${rfpData.additionalRequirements
+        .map((req) => `- ${req}`)
+        .join("\n")}\n`
+    : ""
+}
 
 Please provide a detailed quotation including:
 1. Item-by-item pricing
@@ -483,7 +678,9 @@ Please provide a detailed quotation including:
 5. Warranty information
 6. Any additional services or benefits
 
-IMPORTANT: Please include the RFP ID (${rfpData.id || 'TBD'}) in your email response subject line.
+IMPORTANT: Please include the RFP ID (${
+      rfpData.id || "TBD"
+    }) in your email response subject line.
 
 We look forward to receiving your proposal.
 
