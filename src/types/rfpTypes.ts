@@ -5,6 +5,7 @@ export interface RFPItem {
 }
 
 export interface StructuredRFP {
+  id : string;
   title: string;
   description: string;
   items: RFPItem[];

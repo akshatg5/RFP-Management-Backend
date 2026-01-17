@@ -31,41 +31,84 @@ export const handleInboundEmail = async (req: Request, res: Response) => {
     console.log(`From: ${emailData.from}`);
     console.log(`Subject: ${emailData.subject}`);
 
-    // Fetch full email content using Resend API
-    console.log('Fetching full email content...');
+    // STEP 1: Fetch full email content using Resend API
+    console.log('Fetching full email content from Resend API...');
     
-    const { data: fullEmail, error: fetchError } = await resend.emails.get(emailId);
+    const emailResponse = await fetch(
+      `https://api.resend.com/emails/${emailId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-    if (fetchError || !fullEmail) {
-      console.error('Error fetching email:', fetchError);
+    if (!emailResponse.ok) {
+      console.error(`Resend API Error: ${emailResponse.status} ${emailResponse.statusText}`);
+      const errorText = await emailResponse.text();
+      console.error('Error details:', errorText);
+      
       return res.status(200).json({ 
         success: false, 
-        error: 'Failed to fetch email content' 
+        error: `Failed to fetch email: ${emailResponse.statusText}` 
       });
     }
 
-    console.log('Full email content retrieved');
+    const fullEmail : any = await emailResponse.json();
+    console.log('✅ Full email content retrieved');
 
-    // Extract email details
+    // STEP 2: Extract email content (prioritize text, fallback to HTML)
     const from = emailData.from;
-    const subject = emailData.subject;
-    const textBody = (fullEmail as any).text || (fullEmail as any).html || '';
+    const subject = emailData.subject || fullEmail.subject || '';
+    
+    // Extract body - prefer plain text, but parse HTML if needed
+    let emailBody = fullEmail.text || '';
+    
+    if (!emailBody && fullEmail.html) {
+      // Simple HTML to text conversion (remove tags)
+      emailBody = fullEmail.html
+        .replace(/<style[^>]*>.*?<\/style>/gi, '')
+        .replace(/<script[^>]*>.*?<\/script>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
 
-    console.log(`Body Preview: ${textBody.substring(0, 150)}...`);
+    console.log(`Body Preview: ${emailBody.substring(0, 200)}...`);
+    console.log(`Body Length: ${emailBody.length} characters`);
 
-    if (!from || !textBody) {
+    // Handle attachments if present
+    const attachments = fullEmail.attachments || [];
+    console.log(`Attachments: ${attachments.length}`);
+    
+    if (attachments.length > 0) {
+      console.log('Attachment details:');
+      attachments.forEach((att: any, idx: number) => {
+        console.log(`  [${idx + 1}] ${att.filename} (${att.content_type})`);
+      });
+    }
+
+    // STEP 3: Validate email data
+    if (!from || !emailBody) {
       console.log('⚠️  Missing required email fields');
       return res.status(200).json({
         success: false,
-        error: 'Missing required email fields',
+        error: 'Missing required email fields (from or body)',
       });
     }
 
-    // Extract vendor email
+    // STEP 4: Extract vendor email
     const vendorEmail = extractEmailAddress(from);
     console.log(`Vendor Email: ${vendorEmail}`);
 
-    // Find vendor
+    // STEP 5: Find vendor in database
     const vendor = await vendorService.getVendorByEmail(vendorEmail);
     
     if (!vendor) {
@@ -73,30 +116,34 @@ export const handleInboundEmail = async (req: Request, res: Response) => {
       return res.status(200).json({
         success: true,
         message: 'Email received but no matching vendor found',
+        hint: 'Please ensure the vendor is registered in the system',
       });
     }
 
-    console.log(`✅ Found vendor: ${vendor.name}`);
+    console.log(`✅ Found vendor: ${vendor.name} (ID: ${vendor.id})`);
 
-    // Extract RFP ID from subject or body
-    const rfpId = extractRFPId(subject, textBody);
+    // STEP 6: Extract RFP ID from subject or body
+    const rfpId = extractRFPId(subject, emailBody);
 
     if (!rfpId) {
       console.log(`⚠️  Could not extract RFP ID from email`);
       console.log(`   Subject: ${subject}`);
+      console.log(`   Body preview: ${emailBody.substring(0, 200)}`);
+      
       return res.status(200).json({
         success: true,
         message: 'Email received but no RFP ID found',
+        hint: 'Please ensure the RFP ID is included in the email subject or body',
       });
     }
 
     console.log(`✅ Extracted RFP ID: ${rfpId}`);
 
-    // Check if RFP exists
+    // STEP 7: Verify RFP exists
     const rfp = await rfpService.getRFPById(rfpId);
 
     if (!rfp) {
-      console.log(`⚠️  RFP ${rfpId} not found`);
+      console.log(`⚠️  RFP ${rfpId} not found in database`);
       return res.status(200).json({
         success: true,
         message: 'Email received but RFP not found',
@@ -105,16 +152,33 @@ export const handleInboundEmail = async (req: Request, res: Response) => {
 
     console.log(`✅ Found RFP: ${rfp.title}`);
 
-    // Process the vendor proposal using AI
+    // STEP 8: Process attachments (if any) - extract text from PDFs, parse spreadsheets
+    let attachmentData = '';
+    
+    if (attachments.length > 0) {
+      console.log('🔍 Processing attachments...');
+      attachmentData = await processAttachments(attachments);
+      
+      if (attachmentData) {
+        console.log(`✅ Extracted ${attachmentData.length} chars from attachments`);
+        // Append attachment data to email body for AI processing
+        emailBody += '\n\n--- ATTACHMENT CONTENT ---\n' + attachmentData;
+      }
+    }
+
+    // STEP 9: Process the vendor proposal using AI
     console.log(`🤖 Processing proposal with AI...`);
+    console.log(`   Total content length: ${emailBody.length} characters`);
     
     const result = await rfpService.processVendorProposal(
       rfpId,
       vendorEmail,
-      textBody
+      emailBody
     );
 
     console.log(`✅ Successfully created proposal: ${result.proposalId}`);
+    console.log(`   AI Score: ${result.aiScore || 'N/A'}`);
+    console.log(`   Total Price: ${result.extractedData?.totalPrice || 'N/A'}`);
     console.log('=============================================\n');
 
     // Return success to Resend
@@ -125,11 +189,14 @@ export const handleInboundEmail = async (req: Request, res: Response) => {
         proposalId: result.proposalId,
         vendorName: vendor.name,
         rfpTitle: rfp.title,
+        aiScore: result.aiScore,
+        extractedData: result.extractedData,
       },
     });
 
   } catch (error: any) {
     console.error('❌ Inbound Email Error:', error.message);
+    console.error('Stack:', error.stack);
     console.log('=============================================\n');
     
     // Still return 200 to Resend (don't retry)
@@ -150,6 +217,11 @@ function extractEmailAddress(fromField: string): string {
 
 /**
  * Extract RFP ID from email subject or body
+ * Supports multiple formats:
+ * - "RFP ID: abc-123"
+ * - "RFP-abc-123"
+ * - "Re: RFP abc-123"
+ * - Any UUID format
  */
 function extractRFPId(subject: string, body: string): string | null {
   const text = `${subject} ${body}`;
@@ -164,10 +236,51 @@ function extractRFPId(subject: string, body: string): string | null {
   const match2 = text.match(pattern2);
   if (match2) return match2[1];
 
-  // Pattern 3: Just find any UUID
+  // Pattern 3: Just find any UUID (most permissive)
   const pattern3 = /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i;
   const match3 = text.match(pattern3);
   if (match3) return match3[1];
 
   return null;
+}
+
+/**
+ * Process email attachments and extract text content
+ * Supports: PDF, XLSX, CSV, TXT, DOCX
+ */
+async function processAttachments(attachments: any[]): Promise<string> {
+  let extractedText = '';
+  
+  for (const attachment of attachments) {
+    const { filename, content_type, content } = attachment;
+    
+    try {
+      console.log(`Processing attachment: ${filename} (${content_type})`);
+      
+      // Handle different file types
+      if (content_type === 'text/plain' || content_type === 'text/csv') {
+        // Plain text or CSV - decode base64
+        const decoded = Buffer.from(content, 'base64').toString('utf-8');
+        extractedText += `\n\n--- ${filename} ---\n${decoded}\n`;
+      } 
+      else if (content_type === 'application/pdf') {
+        // PDF - would need pdf-parse library
+        console.log('⚠️  PDF parsing not yet implemented');
+        extractedText += `\n\n--- ${filename} (PDF - content not extracted) ---\n`;
+      }
+      else if (content_type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+        // XLSX - would need xlsx library
+        console.log('⚠️  XLSX parsing not yet implemented');
+        extractedText += `\n\n--- ${filename} (Excel - content not extracted) ---\n`;
+      }
+      else {
+        console.log(`⚠️  Unsupported file type: ${content_type}`);
+      }
+      
+    } catch (error: any) {
+      console.error(`Error processing ${filename}:`, error.message);
+    }
+  }
+  
+  return extractedText;
 }

@@ -236,6 +236,8 @@ export class RFPService {
   ): Promise<{
     success: boolean;
     proposalId: string;
+    aiScore: number;
+    extractedData: any;
   }> {
     try {
       // Fetch RFP
@@ -297,6 +299,8 @@ export class RFPService {
       return {
         success: true,
         proposalId: proposal.id,
+        aiScore: proposal.aiScore || 0,
+        extractedData: parsedProposal.extractedData
       };
     } catch (error: any) {
       console.error("RFP Service Error (processVendorProposal):", error);
