@@ -269,20 +269,21 @@ EXAMPLE RESPONSE:
 
 YOUR RESPONSE MUST BE VALID JSON:`;
 
-      const result = await this.model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: SYSTEM_PROMPT_SCORE_PROPOSAL }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.4,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
-        },
-      });
+const result = await this.model.generateContent({
+  contents: [
+    {
+      role: "user",
+      parts: [{ text: SYSTEM_PROMPT_SCORE_PROPOSAL }],
+    },
+  ],
+  generationConfig: {
+    temperature: 0.4,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: 2048, // Increased from 1024
+    responseMimeType: "application/json", // Tell Gemini to return JSON
+  },
+});
 
       const response = await result.response;
       let text = response.text().trim();
