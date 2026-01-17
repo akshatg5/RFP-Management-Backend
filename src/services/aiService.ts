@@ -216,90 +216,79 @@ YOUR RESPONSE MUST BE VALID JSON:
   }> {
     try {
       const SYSTEM_PROMPT_SCORE_PROPOSAL = `You are an expert procurement evaluator. Score vendor proposals on a scale of 0-100.
-
-Evaluation criteria:
-1. Price competitiveness (30 points)
-   - Compare against budget if provided
-   - Consider value for money
-   - Deduct points for over-budget quotes
-
-2. Delivery timeline (20 points)
-   - Compare against required timeline
-   - Faster = better (within reason)
-   - Deduct for delays
-
-3. Completeness (20 points)
-   - All RFP items quoted
-   - Clear specifications
-   - No missing information
-
-4. Terms and conditions (15 points)
-   - Favorable payment terms
-   - Adequate warranty
-   - Reasonable conditions
-
-5. Additional value (15 points)
-   - Extra services offered
-   - Support and training
-   - Quality indicators
-
-6. Confidence penalty (apply if present)
-   - If confidence < 75%, deduct up to 10 points
-   - Low confidence indicates unclear proposal
-
-SCORING GUIDELINES:
-- 90-100: Exceptional proposal, exceeds requirements
-- 75-89: Strong proposal, meets all requirements well
-- 60-74: Good proposal, meets most requirements
-- 40-59: Acceptable proposal, has some gaps
-- 0-39: Poor proposal, significant issues
-
-RFP Requirements:
-${JSON.stringify(rfpData, null, 2)}
-
-Vendor Proposal from ${vendorName}:
-${JSON.stringify(proposalData, null, 2)}
-
-Provide:
-- score: Number between 0-100
-- evaluation: Detailed 3-5 sentence evaluation explaining the score, highlighting strengths and weaknesses
-
-EXAMPLE RESPONSE:
-{"score": 87, "evaluation": "This proposal offers excellent value with competitive pricing and fast delivery. The vendor demonstrates strong technical expertise and provides comprehensive warranty coverage. Minor concerns about payment terms could be negotiated."}
-
-YOUR RESPONSE MUST BE VALID JSON:`;
-
-const result = await this.model.generateContent({
-  contents: [
-    {
-      role: "user",
-      parts: [{ text: SYSTEM_PROMPT_SCORE_PROPOSAL }],
-    },
-  ],
-  generationConfig: {
-    temperature: 0.4,
-    topK: 40,
-    topP: 0.95,
-    maxOutputTokens: 2048, // Increased from 1024
-    responseMimeType: "application/json", // Tell Gemini to return JSON
-  },
-});
-
+  
+  Evaluation criteria:
+  1. Price competitiveness (30 points)
+  2. Delivery timeline (20 points)
+  3. Completeness (20 points)
+  4. Terms and conditions (15 points)
+  5. Additional value (15 points)
+  
+  RFP Requirements:
+  ${JSON.stringify(rfpData, null, 2)}
+  
+  Vendor Proposal from ${vendorName}:
+  ${JSON.stringify(proposalData, null, 2)}
+  
+  Respond with ONLY valid JSON in this exact format (no markdown, no extra text):
+  {"score": <number 0-100>, "evaluation": "<concise 2-3 sentence evaluation>"}`;
+  
+      console.log('🎯 Sending proposal to AI for scoring...');
+  
+      const result = await this.model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: SYSTEM_PROMPT_SCORE_PROPOSAL }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.3, // Lower temperature for more consistent JSON
+          maxOutputTokens: 2048, // Increased from 1024
+          responseMimeType: "application/json", // Forces JSON output
+        },
+      });
+  
       const response = await result.response;
       let text = response.text().trim();
-
-      // Clean up the response text
+  
+      console.log('📊 Raw scoring response:', text.substring(0, 200));
+  
+      // More aggressive cleanup
       text = text
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
         .replace(/```/g, "")
         .trim();
-
-      const scoringData = JSON.parse(text);
-
+  
+      // Try to extract JSON if wrapped in other text
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        text = jsonMatch[0];
+      }
+  
+      let scoringData;
+      try {
+        scoringData = JSON.parse(text);
+      } catch (parseError) {
+        console.error('JSON parse failed. Raw text:', text);
+        console.error('Parse error:', parseError);
+        
+        // Fallback: try to extract score with regex
+        const scoreMatch = text.match(/"score"\s*:\s*(\d+)/);
+        const score = scoreMatch ? parseInt(scoreMatch[1]) : 50;
+        
+        return {
+          score: Math.min(100, Math.max(0, score)),
+          evaluation: "Automated scoring completed. Manual review recommended due to parsing issues."
+        };
+      }
+  
+      console.log(`✅ Proposal scored: ${scoringData.score}/100`);
+  
       return {
         score: Math.min(100, Math.max(0, scoringData.score)),
-        evaluation: scoringData.evaluation,
+        evaluation: scoringData.evaluation || "No evaluation provided",
       };
     } catch (error: any) {
       console.error(
