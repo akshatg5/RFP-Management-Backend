@@ -353,7 +353,7 @@ EXAMPLE RESPONSE:
   "comparisonSummary": "TechCorp leads with a 92/100 score due to superior pricing and service quality. DataSys follows closely at 88/100 with strong technical capabilities but higher costs. BudgetCorp offers the lowest price at 76/100 but lacks comprehensive support services."
 }
 
-YOUR RESPONSE MUST BE VALID JSON:
+YOUR RESPONSE MUST BE VALID JSON:`
 
       const result = await this.model.generateContent({
         contents: [
